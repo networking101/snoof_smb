@@ -255,7 +255,7 @@ struct sniff_tcp {
         tcp_seq th_seq;                 /* sequence number */
         tcp_seq th_ack;                 /* acknowledgement number */
         u_char  th_offx2;               /* data offset, rsvd */
-	#define TH_OFF(th)      (((th)->th_offx2 & 0xf0) >> 4)
+#define TH_OFF(th)      (((th)->th_offx2 & 0xf0) >> 4)
         u_char  th_flags;
         #define TH_FIN  0x01
         #define TH_SYN  0x02
@@ -494,32 +494,34 @@ print_payload(const u_char *payload, int len)
 return;
 }
 
+
 /*
  * dissect/print packet
  */
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 {
+	const char buffer[1500];
 
-	static int count = 1;                   /* packet counter */
-	
 	/* declare pointers to packet headers */
-	const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
-	const struct sniff_ip *ip;              /* The IP header */
-	const struct sniff_tcp *tcp;            /* The TCP header */
-	const struct sniff_smb *smb;		/* The SMB header */
-	const char *payload;                    /* Packet payload */
+	//struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
+	struct sniff_ip *ip;              /* The IP header */
+	struct sniff_tcp *tcp;            /* The TCP header */
+	//struct sniff_smb *smb;		/* The SMB header */
+	//char *payload;                    /* Packet payload */
+
+	/* create pointers to spoofed packet headers */
+	struct sniff_ip *newip;
+	struct sniff_tcp *newtcp;
+	//struct sniff_smb *newsmb;
 
 	int size_ip;
 	int size_tcp;
-	int size_smb;
-	int size_payload;
-	
-	//printf("\nPacket number %d:\n", count);
-	//count++;
+	//int size_smb;
+	//int size_payload;
 	
 	/* define ethernet header */
-	ethernet = (struct sniff_ethernet*)(packet);
+	//ethernet = (struct sniff_ethernet*)(packet);
 	
 	/* define/compute ip header offset */
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
@@ -529,33 +531,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 		return;
 	}
 
-	/* print source and destination IP addresses */
-	printf("       From: %s:%d\n", inet_ntoa(ip->ip_src), ntohs(tcp->th_sport));
-	printf("         To: %s:%d\n", inet_ntoa(ip->ip_dst), ntohs(tcp->th_dport));
-	
-	/* determine protocol */	
-	/*switch(ip->ip_p) {
-		case IPPROTO_TCP:
-			printf("   Protocol: TCP\n");
-			break;
-		case IPPROTO_UDP:
-			printf("   Protocol: UDP\n");
-			return;
-		case IPPROTO_ICMP:
-			printf("   Protocol: ICMP\n");
-			return;
-		case IPPROTO_IP:
-			printf("   Protocol: IP\n");
-			return;
-		default:
-			printf("   Protocol: unknown\n");
-			return;
-	}*/
-	
-	/*
-	 *  OK, this packet is TCP.
-	 */
-	
 	/* define/compute tcp header offset */
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
@@ -563,32 +538,44 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
 		return;
 	}
-	
-	//printf("   Src port: %d\n", ntohs(tcp->th_sport));
-	//printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+
+	/* print source and destination IP addresses and ports */
+	printf("       From: %s:%d\n", inet_ntoa(ip->ip_src), ntohs(tcp->th_sport));
+	printf("         To: %s:%d\n", inet_ntoa(ip->ip_dst), ntohs(tcp->th_dport));
+
 	
 	/* define/compute smb header offset */
-	smb = (struct sniff_smb*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-	size_smb = ntohl(SMB_SIZE(smb))+4;
-	printf("\nTCP_SIZE: %u bytes\n", size_tcp);
-	printf("\nSMB_SIZE: %u bytes\n", size_smb);
+	//smb = (struct sniff_smb*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	//size_smb = ntohl(SMB_SIZE(smb))+4;
 
-	/* define/compute tcp payload (segment) offset */
+	/* define/compute smb payload (segment) offset */
 	//payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
-	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 
-	/* compute tcp payload (segment) size */
+	/* compute smb payload (segment) size */
 	//size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 
-	/*
-	 * Print payload data; it might be binary, so don't just
-	 * treat it as a string.
-	 */
-	if (size_payload > 0) {
-		printf("   Payload (%d bytes):\n", size_payload);
-		print_payload(payload, size_payload);
-	}
+	/* Make a copy from the original packet */
+	memset((char*)buffer, 0, 1500);
+	memcpy((char*)buffer, ip, ntohs(ip->ip_len));
+	newip = (struct sniff_ip *) buffer;
+	newtcp = (struct sniff_tcp *) ((u_char *)buffer + size_ip);
+	//newsmb = (struct sniff_smb *) ((u_char *)buffer + size_ip + size_tcp); 
+
+	/* Construct IP header, TCP header, and SMB header */
+	newip->ip_src = ip->ip_dst; 
+	newip->ip_dst = ip->ip_src;
+
+	int tcp_seg_len = (ntohs(ip->ip_len) - size_ip - size_tcp);
+	newtcp->th_sport = tcp->th_dport;
+	newtcp->th_dport = tcp->th_sport;
+	newtcp->th_seq = tcp->th_ack;
+	newtcp->th_ack = htonl(ntohl(tcp->th_seq) + tcp_seg_len);
+
+	printf("\nOld src: %s   New src: %s\n", inet_ntoa(ip->ip_src), inet_ntoa(newip->ip_src));
+	printf("Old sport: %d   New sport: %d\n", ntohs(tcp->th_sport), ntohs(newtcp->th_sport));
+	printf("\nOld seq: %u	New seq: %u\n", ntohl(tcp->th_seq), ntohl(newtcp->th_seq));
+	printf("Old ack: %u   New ack: %u\n", ntohl(tcp->th_ack), ntohl(newtcp->th_ack));
+
 
 return;
 }
@@ -604,7 +591,6 @@ int main(int argc, char **argv)
 	struct bpf_program fp;			/* compiled filter program (expression) */
 	bpf_u_int32 mask;			/* subnet mask */
 	bpf_u_int32 net;			/* ip */
-	//int num_packets = 10;			/* number of packets to capture */
 
 	print_app_banner();
 
