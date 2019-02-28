@@ -273,9 +273,9 @@ struct sniff_tcp {
 
 /* SMB header */
 struct sniff_smb {
-	u_int   smb_nb;			/* netbios */
-	#define SMB_MT  0xff000000
-	#define SMB_SIZ 0x00ffffff	/* SMB length */
+	//u_int   smb_nb;			/* netbios */
+	u_long  smb_nb;
+	#define SMB_SIZE(smb)	(smb->smb_nb & 0xffffff00)	/* SMB length */
 
 	u_int   smb_sc;			/* server component */
 	u_char  smb_cmd;		/* smb command */
@@ -569,15 +569,18 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	
 	/* define/compute smb header offset */
 	smb = (struct sniff_smb*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-	size_smb = SMB_SIZ;
+	size_smb = ntohl(SMB_SIZE(smb))+4;
+	printf("\nTCP_SIZE: %u bytes\n", size_tcp);
 	printf("\nSMB_SIZE: %u bytes\n", size_smb);
 
 	/* define/compute tcp payload (segment) offset */
-	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
-	
+	//payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
+	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+
 	/* compute tcp payload (segment) size */
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
-	
+	//size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
+	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
+
 	/*
 	 * Print payload data; it might be binary, so don't just
 	 * treat it as a string.
