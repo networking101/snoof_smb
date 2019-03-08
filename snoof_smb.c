@@ -315,7 +315,7 @@ struct sniff_CAXR {
 	u_char  car_wc;			/* word count */
 	u_char  car_axc;                /* andxcommand */
 	u_char  car_res;                /* reserved */
-	u_char car_axo[2];		/* andxoffset */
+	u_char  car_axo[2];		/* andxoffset */
 	u_char  car_ol;                 /* oplock level */
 	u_short car_fid;                /* fid */
 	u_int   car_ca;			/* create action */
@@ -346,9 +346,25 @@ struct sniff_CAXR {
 	u_char  car_isdir;		/* is directory */
 	u_char  car_vguid[16];		/* volume guid */
 	u_char  car_svrun[8];		/* server unique */
-	u_int   car_mar;		/* maximal access rights */
-	u_int   car_gmar;		/* guest maximal access rights */
-	u_short car_bc;			/* byte count */
+	u_char  car_mar[4];		/* maximal access rights */
+	u_char  car_gmar[4];		/* guest maximal access rights */
+	u_char  car_bc[2];			/* byte count */
+};
+
+/* SMB Read AndX Response */
+struct sniff_RAXR {
+	u_char  rar_wc;			/* word count */
+	u_char  rar_axc;		/* andxcommand */
+	u_char  rar_res;		/* reserved */
+	u_char  rar_axo[2];		/* andxoffset */
+	u_char  rar_rem[2];		/* remaining */
+	u_char  rar_dcm[2];		/* data compaction mode */
+	u_char  rar_res2[2];		/* reserved */
+	u_char  rar_dll[2];		/* data length low */
+	u_char  rar_dof[2];		/* data offset */
+	u_char  rar_dlh[4];		/* data length high */
+	u_char  rar_res3[6];		/* reserved */
+	u_char  rar_bc[2];		/* byte count */
 };
 
 u_short
@@ -529,7 +545,7 @@ void send_raw_ip_packet(struct sniff_ip* ip)
 	close(sock);
 }
 
-void lockingAndXResponse(u_char *payload, int size_payload)
+void readAndXResponse(u_char *payload, u_short fid)
 {
 	/*u_char *newpayload =
 		"\x08"		// Word count
@@ -551,56 +567,30 @@ void createAndXResponse(u_char *payload, u_short fid)
 {
 	struct sniff_CAXR *newpayload = (struct sniff_CAXR*)payload;
 	
-	newpayload->car_wc = (u_char)0x2a;
-	newpayload->car_axc = (u_char)0xff;
-	newpayload->car_res = (u_char)0x00;
-	newpayload->car_axo[0] = (u_char*)0x0087;
-	newpayload->car_ol = (u_char)0x02; 
-	newpayload->car_fid = htons(fid); 
-	newpayload->car_ca = (u_int)0x00000001;
-	newpayload->car_c = (u_long)0x01d47fa72d08873b;
-	newpayload->car_la = (u_long)0x01d47fb72663a230;
-	newpayload->car_lw = (u_long)0x01d47fb6b5869446;
-	newpayload->car_ch = (u_long)0x01d47fb6b5869446;
-	newpayload->car_fa = (u_int)0x00000020;
-	newpayload->car_als = (u_long)0x0000000000007000;
-	newpayload->car_eof = (u_long)0x0000000000006a22;
-	newpayload->car_ft = (u_short)0x0000;
-	newpayload->car_ipc = (u_short)0x0070;
-	newpayload->car_isdir = (u_char)0x00;
-	newpayload->car_vguid[0] = (u_char*)0x00000000000000000000000000000000;
-	newpayload->car_svrun[0] = (u_char*)0x0000000000000000;
-	newpayload->car_mar = (u_int)0x001f01ff;
-	newpayload->car_gmar = (u_int)0x00000000;
-	newpayload->car_bc = (u_short)0x0000;
-
-	printf("\n%x\n",fid);
-
-	/*u_char *newpayload =
-		"\x2a"//"\xa2"		// Word count
-		"\xff"		// AndXCommand: No further commands
-		"\x00"		// Reserved
-		"\x87\x00"		// AndXOffset
-		"\x02"		// Oplock level: Batch oplock granted (2)
-		"\x44\x44"		// FID
-		
-		"\x01\x00\x00\x00"		// Create action
-		"\x3b\x87\x08\x2d\xa7\x7f\xd4\x01"		// Created
-		"\x30\xa2\x63\x26\xb7\x7f\xd4\x01"		// Last access
-		"\x46\x94\x86\xb5\xb6\x7f\xd4\x01"		// Last write
-		"\x46\x94\x86\xb5\xb6\x7f\xd4\x01"		// Change
-		"\x20\x00\x00\x00"		// File attributes
-		"\x00\x70\x00\x00\x00\x00\x00\x00"		// Allocation size
-		"\x22\x6a\x00\x00\x00\x00\x00\x00"		// End of file
-		"\x00\x00"		// File type: Disk file or directory
-		"\x70\x00"		// IPC state
-		"\x00"		// Is directory
-		"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"		// Volume GUID
-		"\x00\x00\x00\x00\x00\x00\x00\x00"		// Server unique file ID
-		"\xff\x01\x1f\x00"		// Maximal access rights
-		"\x00\x00\x00\x00"		// Guest maximal access rights
-		"\x00\x00"		// Byte count
-	;*/
+	newpayload->car_wc = (u_char)0x2a;		// Word count
+	newpayload->car_axc = (u_char)0xff;		// AndXCommand: No further commands
+	newpayload->car_res = (u_char)0x00;		// Reserved
+	newpayload->car_axo[0] = (u_char*)0x0087;		// AndXOffset
+	newpayload->car_ol = (u_char)0x02; 		// Oplock level: Batch oplock granted (2)
+	newpayload->car_fid = htons(fid);		// FID
+	newpayload->car_ca = (u_int)0x00000001;		// Create action
+	newpayload->car_c = (u_long)0x01d47fa72d08873b;		// Created
+	newpayload->car_la = (u_long)0x01d47fb72663a230;		// Last access
+	newpayload->car_lw = (u_long)0x01d47fb6b5869446;		// Last write
+	newpayload->car_ch = (u_long)0x01d47fb6b5869446;		// Change
+	newpayload->car_fa = (u_int)0x00000020;		// File attributes
+	newpayload->car_als = (u_long)0x0000000000007000;		// Allocation size
+	newpayload->car_eof = (u_long)0x0000000000006a22;		// End of file
+	newpayload->car_ft = (u_short)0x0000;		// File type: Disk file or directory
+	newpayload->car_ipc = (u_short)0x0070;		// IPC state
+	newpayload->car_isdir = (u_char)0x00;		// Is directory
+	newpayload->car_vguid[0] = (u_char*)0x00000000000000000000000000000000;		// Volume GUID
+	newpayload->car_svrun[0] = (u_char*)0x0000000000000000;		// Server unique file ID
+/*	newpayload->car_mar[0] = (u_int)0x001f01ff;		// Maximal access rights
+	newpayload->car_gmar[0] = (u_int)0x00000000;		// Guest maximal access rights
+	newpayload->car_bc[0] = (u_short)0x0000;		// Byte count
+*/
+	printf("\n%x\n",htons(fid));
 	memcpy(payload, newpayload, 103); 
 }
 	
